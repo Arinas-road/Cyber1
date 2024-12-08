@@ -1,9 +1,12 @@
 import {useState} from "react"
 
-const ContactForm = ({}) => {
-    const [firstName, setFirstName] = useState("");
-    const [lastName, setLastName] = useState("");
-    const [email, setEmail] = useState("");
+const ContactForm = ({existingContact={}, updateCallBack}) => {
+    const [firstName, setFirstName] = useState(existingContact.firstName || "");
+    const [lastName, setLastName] = useState(existingContact.lastName || "");
+    const [email, setEmail] = useState(existingContact.email || "");
+
+    // if we have an object that has at least one entry inside, then we are updating
+    const updating = Object.entries(existingContact).length !== 0
 
     const onSubmit = async (e) => {
         e.preventDefault()
@@ -13,9 +16,9 @@ const ContactForm = ({}) => {
             lastName,
             email,
         }
-        const url = "http://127.0.0.1:5000/create_contact";
+        const url = "http://127.0.0.1:5000/" + (updating ? `update_contact/${existingContact.id}` : "create_contact" );
         const options = {
-            method: "POST",
+            method: updating ? "PATCH" : "POST",
             headers: {
                 "Content-Type": "application/json"
             },
@@ -28,8 +31,7 @@ const ContactForm = ({}) => {
             const data = await response.json();
             alert(data.message)
         } else{
-            //successfull
-            console.log(response.status)
+            updateCallBack();
         }
     }
 
@@ -60,7 +62,7 @@ const ContactForm = ({}) => {
                 value={email} 
                 onChange={(e) => setEmail(e.target.value)}></input>
         </div>
-        <button type="submit">Create Contact</button>
+        <button type="submit">{updating ? "Update" : "Create"}</button>
     </form>
 }
 
