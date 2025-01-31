@@ -1,0 +1,14 @@
+2025-01-30 20:33:37,988 - INFO - [SERVER_BL] listening...
+2025-01-30 20:33:37,988 - INFO - [CServerBL] server_socket : <socket.socket fd=704, family=2, type=1, proto=0, laddr=('0.0.0.0', 5000)>
+2025-01-30 20:33:40,394 - INFO - [SERVER_BL] Client connected <socket.socket fd=732, family=2, type=1, proto=0, laddr=('127.0.0.1', 5000), raddr=('127.0.0.1', 51911)>('127.0.0.1', 51911) 
+2025-01-30 20:33:40,394 - INFO - [SERVER_BL address: ('127.0.0.1', 51911)
+2025-01-30 20:33:40,396 - INFO - [SERVER_BL] ACTIVE CONNECTION 1
+2025-01-30 20:33:40,432 - INFO - [SERVER_BL] NEW CONNECTION event invoked
+2025-01-30 20:33:40,433 - INFO - [CServerBL] server_socket : <socket.socket fd=704, family=2, type=1, proto=0, laddr=('0.0.0.0', 5000)>
+2025-01-30 20:33:40,433 - INFO - [SERVER_BL] Client connected <socket.socket fd=824, family=2, type=1, proto=0, laddr=('127.0.0.1', 5000), raddr=('127.0.0.1', 51912)>('127.0.0.1', 51912) 
+2025-01-30 20:33:40,434 - INFO - [SERVER_BL address: ('127.0.0.1', 51912)
+2025-01-30 20:33:40,436 - INFO - [SERVER_BL] ACTIVE CONNECTION 2
+2025-01-30 20:33:40,436 - INFO - [SERVER_BL] NEW CONNECTION event invoked
+2025-01-30 20:33:40,437 - INFO - [CServerBL] server_socket : <socket.socket fd=704, family=2, type=1, proto=0, laddr=('0.0.0.0', 5000)>
+2025-01-30 20:33:40,439 - INFO - [('127.0.0.1', 51912)] Error: 'utf-8' codec can't decode byte 0xc8 in position 2: invalid continuation byte
+2025-01-30 20:33:40,439 - INFO - [('127.0.0.1', 51912)] Connection closed.

@@ -1,0 +1,223 @@
+import json
+import socket
+import threading
+from cryptography.fernet import Fernet
+from flask import request, jsonify
+from config import app, db
+from protocol import *
+import asyncio
+import base64
+import hashlib
+#import websockets
+
+SERVER_HOST: str = "0.0.0.0"
+CLIENT_HOST: str = "127.0.0.1"
+PORT: int = 5000
+BUFFER_SIZE: int = 1024
+HEADER_LEN: int = 2
+FORMAT: str = 'utf-8'
+DISCONNECT_MSG: str = "EXIT"
+
+# events
+NEW_CONNECTION: int = 1
+CLOSE_CONNECTION: int = 2
+NEW_REGISTRATION: int = 3
+
+
+    
+class CClientHandler(threading.Thread):
+    def __init__(self, client_socket, address):
+        super().__init__()
+        self.client_socket = client_socket
+        self.address = address
+
+    def handle_handshake(self):
+        """Handle WebSocket handshake"""
+        # Read the HTTP request
+        request = self.client_socket.recv(1024).decode("utf-8")
+        
+        # Extract Sec-WebSocket-Key from the request headers
+        headers = request.split("\r\n")
+        sec_websocket_key = None
+        for header in headers:
+            if header.startswith("Sec-WebSocket-Key"):
+                sec_websocket_key = header.split(":")[1].strip()
+                break
+        
+        if not sec_websocket_key:
+            raise Exception("No Sec-WebSocket-Key found in the request")
+
+        # Compute Sec-WebSocket-Accept
+        magic_string = sec_websocket_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        sec_websocket_accept = base64.b64encode(hashlib.sha1(magic_string.encode("utf-8")).digest()).decode("utf-8")
+
+        # Send the handshake response
+        response = (
+            "HTTP/1.1 101 Switching Protocols\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Accept: {sec_websocket_accept}\r\n"
+            "\r\n"
+        )
+        self.client_socket.send(response.encode("utf-8"))
+
+    
+    
+    def run(self):
+        connected = True
+        self.handle_handshake()
+
+        while connected:
+            try:
+                # We need to read WebSocket frames after handshake
+                frame = self.client_socket.recv(1024)
+                if not frame:
+                    break  # If no data received, client might have disconnected
+                
+                # Process WebSocket frame
+                message = self.process_websocket_frame(frame)
+                if message:
+                    write_to_log(f"[{self.address}] Received message: {message}")
+                    # Respond with a WebSocket frame (echoing the message for simplicity)
+                    self.send_websocket_frame("Echo: " + message)
+                
+            except ConnectionResetError:
+                write_to_log(f"[{self.address}] Client disconnected abruptly")
+                connected = False
+            except Exception as e:
+                write_to_log(f"[{self.address}] Error: {e}")
+                connected = False
+
+        self.client_socket.close()
+        write_to_log(f"[{self.address}] Connection closed.")
+
+    def process_websocket_frame(self, frame):
+        """
+        Process the WebSocket frame and extract the message.
+        This will decode the payload based on WebSocket frame format.
+        """
+        # WebSocket frame handling
+        # The first byte contains the frame's final fragment and opcode (0x81 for text frame)
+        first_byte = frame[0]
+        mask = frame[1] & 0x80  # Mask bit is set if the frame is masked (in the case of the client-to-server frame)
+        length = frame[1] & 0x7F  # Payload length is the remaining bits in byte 1
+
+        # If length is 126 or 127, you would need to handle extended length (not implemented here for simplicity)
+        if length == 126:
+            length = int.from_bytes(frame[2:4], 'big')  # If the length is 126, the actual length is stored in the next 2 bytes
+        elif length == 127:
+            length = int.from_bytes(frame[2:10], 'big')  # For 127, it's 8 bytes (not fully supported here)
+
+        # Extract payload
+        payload = frame[2:2 + length]
+        if mask:
+            # Unmask the payload if it's masked (client-to-server frames are masked)
+            mask_key = frame[2 + length:6 + length]
+            payload = bytes([payload[i] ^ mask_key[i % 4] for i in range(len(payload))])
+
+        # Convert payload to string (assuming UTF-8 encoded)
+        message = payload.decode("utf-8")
+        return message
+
+    def send_websocket_frame(self, message):
+        """
+        Send a WebSocket frame (this is a simple example for a text frame).
+        """
+        # WebSocket frame format:
+        # 0x81 is the opcode for a text frame (0x81 = 10000001 in binary)
+        frame = bytearray([0x81])
+
+        # Payload length
+        length = len(message)
+        if length <= 125:
+            frame.append(length)  # For lengths <= 125, the length is 1 byte
+        elif length > 125 and length <= 65535:
+            frame.append(126)
+            frame.extend(length.to_bytes(2, 'big'))  # If length > 125, use 2 bytes for length
+        else:
+            frame.append(127)
+            frame.extend(length.to_bytes(8, 'big'))  # For very large lengths
+
+class CServerBL:
+
+    def __init__(self, host, port):
+
+        # Open the log file in write mode, which truncates the file to zero length
+        with open(LOG_FILE, 'w'):
+            pass  # This block is empty intentionally
+
+        self._host = host
+        self._port = port
+        self._server_socket = None
+        self._is_srv_running = True
+        self._client_handlers = []
+        self._register_clients = []
+
+    
+    def delete_from_client_handlers(self, address):
+        write_to_log(f"[CServer_BL] client_handlers list length: {len(self._client_handlers)}")
+        for el in self._client_handlers:
+            if el._address == address:
+                write_to_log(f"[CServer_BL] in delete client, el found: {el._address}")
+                self._client_handlers.remove(el)
+                break  # Exit the loop after removing the client
+        write_to_log(f"[CServer_BL] el deleted, list: {len(self._client_handlers)}")
+
+
+    def stop_server(self):
+        try:
+            self._is_srv_running = False
+            # Close server socket
+            if self._server_socket is not None:
+                self._server_socket.close()
+                self._server_socket = None
+            write_to_log(f"[CSERVERBL] in stop_server: {len(self._client_handlers)}")
+            if len(self._client_handlers) > 0:
+                # Waiting to close all opened threads
+                for client_thread in self._client_handlers:
+                    client_thread.join()
+                write_to_log(f"[SERVER_BL] All Client threads are closed")
+            write_to_log(f"[CServerBL] srv_socket in stop server: {self._server_socket}")
+
+        except Exception as e:
+            write_to_log("[SERVER_BL] Exception in Stop_Server fn : {}".format(e))
+
+    
+    
+    def start_server(self):
+        try:
+            self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._server_socket.bind((self._host, self._port))
+            self._server_socket.listen(5)
+            write_to_log(f"[SERVER_BL] listening...")
+            self._is_srv_running = True
+
+            while self._is_srv_running and self._server_socket is not None:
+                write_to_log(f"[CServerBL] server_socket : {self._server_socket}")
+                # Accept socket request for connection
+                client_socket, address = self._server_socket.accept()
+                write_to_log(f"[SERVER_BL] Client connected {client_socket}{address} ")
+                write_to_log(f"[SERVER_BL address: {address}")
+                # Start Thread
+                cl_handler = CClientHandler(client_socket, address)
+                cl_handler.start()
+                self._client_handlers.append(cl_handler)
+                
+                write_to_log(f"[SERVER_BL] ACTIVE CONNECTION {threading.active_count() - 1}")
+                # invoke event NEW CONNECTION
+                self.fire_event(NEW_CONNECTION, cl_handler)
+                write_to_log("[SERVER_BL] NEW CONNECTION event invoked")
+
+
+        except Exception as e:
+            write_to_log("[SERVER_BL] Exception in start_server fn : {}".format(e))
+        finally:
+            write_to_log(f"[SERVER_BL] Server thread is DONE")
+
+    def fire_event(self, enum_event: int, client_handl):
+        pass
+
+
+write_to_log(f"{SERVER_HOST} {PORT}")
+server = CServerBL(SERVER_HOST, PORT)
+server.start_server()

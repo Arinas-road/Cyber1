@@ -10,11 +10,20 @@ from flask_cors import CORS
 # In our case, our frontend is a different server than the backend and we want to be able to communicate, so we remove this CORS error, which can pop up
 
 app = Flask(__name__)
-CORS(app) #disables the error described above
+CORS(app, origins="*") #disables the error described above
 
 # [2] initializing database
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///mydatabase.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///Contact.db"
+
+app.config["SQLALCHEMY_BINDS"] = {
+    'Task': "sqlite:///Task.db",  # Binding the second database to a name
+    'EncryptionKey': "sqlite:///EncryptionKey.db", # database for key
+    'User': "sqlite:///User.db",
+}
+
+
 #here we are specifying the location of the local SQL lite database (storing a file)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False # disabling tracking modifications we make to a database, to make life easier
 
 db = SQLAlchemy(app) # creates database instance, which gives us access to the database that we specified in line 16
+
